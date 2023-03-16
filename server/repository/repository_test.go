@@ -87,17 +87,7 @@ var (
 			Destinations: []appsv1.ApplicationDestination{{Server: "*", Namespace: "*"}},
 		},
 	}
-	fakeRepo = appsv1.Repository{
-		Repo:      "https://test",
-		Type:      "test",
-		Name:      "test",
-		Username:  "argo",
-		Insecure:  false,
-		EnableLFS: false,
-		EnableOCI: false,
-		Proxy:     "test",
-		Project:   "argocd",
-	}
+
 	guestbookApp = &appsv1.Application{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Application",
@@ -109,7 +99,7 @@ var (
 		},
 		Spec: appsv1.ApplicationSpec{
 			Project: "default",
-			Source: &appsv1.ApplicationSource{
+			Source: appsv1.ApplicationSource{
 				RepoURL:        "https://test",
 				TargetRevision: "HEAD",
 				Helm: &appsv1.ApplicationSourceHelm{
@@ -289,23 +279,6 @@ func TestRepositoryServer(t *testing.T) {
 		assert.Equal(t, repo.Repo, "test")
 	})
 
-	t.Run("Test_ListRepositories", func(t *testing.T) {
-		repoServerClient := mocks.RepoServerServiceClient{}
-		repoServerClient.On("TestRepository", mock.Anything, mock.Anything).Return(&apiclient.TestRepositoryResponse{}, nil)
-		repoServerClientset := mocks.Clientset{RepoServerServiceClient: &repoServerClient}
-		enforcer := newEnforcer(kubeclientset)
-
-		url := "https://test"
-		db := &dbmocks.ArgoDB{}
-		db.On("GetRepository", context.TODO(), url).Return(nil, nil)
-		db.On("ListHelmRepositories", context.TODO(), mock.Anything).Return(nil, nil)
-		db.On("ListRepositories", context.TODO()).Return([]*appsv1.Repository{&fakeRepo, &fakeRepo}, nil)
-
-		s := NewServer(&repoServerClientset, db, enforcer, newFixtures().Cache, appLister, projInformer, testNamespace, settingsMgr)
-		resp, err := s.ListRepositories(context.TODO(), &repository.RepoQuery{})
-		assert.NoError(t, err)
-		assert.Equal(t, 2, len(resp.Items))
-	})
 }
 
 func TestRepositoryServerListApps(t *testing.T) {
@@ -534,7 +507,7 @@ func TestRepositoryServerGetAppDetails(t *testing.T) {
 
 		s := NewServer(&repoServerClientset, db, enforcer, newFixtures().Cache, appLister, projLister, testNamespace, settingsMgr)
 		resp, err := s.GetAppDetails(context.TODO(), &repository.RepoAppDetailsQuery{
-			Source:     guestbookApp.Spec.GetSourcePtr(),
+			Source:     &guestbookApp.Spec.Source,
 			AppName:    "guestbook",
 			AppProject: "default",
 		})
@@ -553,7 +526,7 @@ func TestRepositoryServerGetAppDetails(t *testing.T) {
 
 		s := NewServer(&repoServerClientset, db, enforcer, newFixtures().Cache, appLister, projLister, testNamespace, settingsMgr)
 		resp, err := s.GetAppDetails(context.TODO(), &repository.RepoAppDetailsQuery{
-			Source:     guestbookApp.Spec.GetSourcePtr(),
+			Source:     &guestbookApp.Spec.Source,
 			AppName:    "guestbook",
 			AppProject: "mismatch",
 		})
