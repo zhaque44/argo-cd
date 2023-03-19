@@ -178,7 +178,7 @@ Consider using [bitnami-labs/sealed-secrets](https://github.com/bitnami-labs/sea
 Each repository must have a `url` field and, depending on whether you connect using HTTPS, SSH, or GitHub App, `username` and `password` (for HTTPS), `sshPrivateKey` (for SSH), or `githubAppPrivateKey` (for GitHub App).
 
 !!!warning
-    When using [bitnami-labs/sealed-secrets](https://github.com/bitnami-labs/sealed-secrets) the labels will be removed and have to be readded as described here: https://github.com/bitnami-labs/sealed-secrets#sealedsecrets-as-templates-for-secrets
+    When using [bitnami-labs/sealed-secrets](https://github.com/bitnami-labs/sealed-secrets) the labels will be removed and have to be readded as descibed here: https://github.com/bitnami-labs/sealed-secrets#sealedsecrets-as-templates-for-secrets
 
 Example for HTTPS:
 
@@ -253,33 +253,6 @@ stringData:
     -----BEGIN OPENSSH PRIVATE KEY-----
     ...
     -----END OPENSSH PRIVATE KEY-----
-```
-
-Example for Google Cloud Source repositories:
-
-```yaml
-kind: Secret
-metadata:
-  name: github-repo
-  namespace: argocd
-  labels:
-    argocd.argoproj.io/secret-type: repository
-stringData:
-  type: git
-  repo: https://source.developers.google.com/p/my-google-project/r/my-repo
-  gcpServiceAccountKey: |
-    {
-      "type": "service_account",
-      "project_id": "my-google-project",
-      "private_key_id": "REDACTED",
-      "private_key": "-----BEGIN PRIVATE KEY-----\nREDACTED\n-----END PRIVATE KEY-----\n",
-      "client_email": "argocd-service-account@my-google-project.iam.gserviceaccount.com",
-      "client_id": "REDACTED",
-      "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-      "token_uri": "https://oauth2.googleapis.com/token",
-      "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-      "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/argocd-service-account%40my-google-project.iam.gserviceaccount.com"
-    }
 ```
 
 !!! tip
@@ -515,7 +488,6 @@ The secret data must include following fields:
 * `server` - cluster api server url
 * `namespaces` - optional comma-separated list of namespaces which are accessible in that cluster. Cluster level resources would be ignored if namespace list is not empty.
 * `clusterResources` - optional boolean string (`"true"` or `"false"`) determining whether Argo CD can manage cluster-level resources on this cluster. This setting is used only if the list of managed namespaces is not empty.
-* `project` - optional string to designate this as a project-scoped cluster.
 * `config` - JSON representation of following data structure:
 
 ```yaml
@@ -710,10 +682,6 @@ Notes:
 * Invalid globs result in the whole rule being ignored.
 * If you add a rule that matches existing resources, these will appear in the interface as `OutOfSync`.
 
-## Resource Custom Labels
-
-Custom Labels configured with `resource.customLabels` (comma separated string) will be displayed in the UI (for any resource that defines them).
-
 ## SSO & RBAC
 
 * SSO configuration details: [SSO](./user-management/index.md)
@@ -727,15 +695,17 @@ based application which uses base Argo CD manifests from [https://github.com/arg
 Example of `kustomization.yaml`:
 
 ```yaml
+bases:
+- github.com/argoproj/argo-cd//manifests/cluster-install?ref=v1.0.1
+
 # additional resources like ingress rules, cluster and repository secrets.
 resources:
-- github.com/argoproj/argo-cd//manifests/cluster-install?ref=v1.0.1
 - clusters-secrets.yaml
 - repos-secrets.yaml
 
 # changes to config maps
-patches:
-- path: overlays/argo-cd-cm.yaml
+patchesStrategicMerge:
+- overlays/argo-cd-cm.yaml
 ```
 
 The live example of self managed Argo CD config is available at [https://cd.apps.argoproj.io](https://cd.apps.argoproj.io) and with configuration
