@@ -503,7 +503,7 @@ func (s *Server) logEvent(a *v1alpha1.AppProject, ctx context.Context, reason st
 		user = "Unknown user"
 	}
 	message := fmt.Sprintf("%s %s", user, action)
-	s.auditLogger.LogAppProjEvent(a, eventInfo, message, user)
+	s.auditLogger.LogAppProjEvent(a, eventInfo, message)
 }
 
 func (s *Server) GetSyncWindowsState(ctx context.Context, q *project.SyncWindowsQuery) (*project.SyncWindowsResponse, error) {
@@ -538,11 +538,11 @@ func (s *Server) NormalizeProjs() error {
 			if proj.NormalizeJWTTokens() {
 				_, err := s.appclientset.ArgoprojV1alpha1().AppProjects(s.ns).Update(context.Background(), &proj, metav1.UpdateOptions{})
 				if err == nil {
-					log.Infof("Successfully normalized project %s.", proj.Name)
+					log.Info(fmt.Sprintf("Successfully normalized project %s.", proj.Name))
 					break
 				}
 				if !apierr.IsConflict(err) {
-					log.Warnf("Failed normalize project %s", proj.Name)
+					log.Warn(fmt.Sprintf("Failed normalize project %s", proj.Name))
 					break
 				}
 				projGet, err := s.appclientset.ArgoprojV1alpha1().AppProjects(s.ns).Get(context.Background(), proj.Name, metav1.GetOptions{})

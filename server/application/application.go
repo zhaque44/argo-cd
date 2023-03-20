@@ -1845,11 +1845,6 @@ func (s *Server) ListResourceLinks(ctx context.Context, req *application.Applica
 		return nil, fmt.Errorf("failed to read application deep links from configmap: %w", err)
 	}
 
-	obj, err = replaceSecretValues(obj)
-	if err != nil {
-		return nil, fmt.Errorf("error replacing secret values: %w", err)
-	}
-
 	finalList, errorList := deeplinks.EvaluateDeepLinksResponse(*obj, deepLinks)
 	if len(errorList) > 0 {
 		log.Errorf("errors while evaluating resource deep links, %v", strings.Join(errorList, ", "))
@@ -1939,7 +1934,7 @@ func (s *Server) logAppEvent(a *appv1.Application, ctx context.Context, reason s
 		user = "Unknown user"
 	}
 	message := fmt.Sprintf("%s %s", user, action)
-	s.auditLogger.LogAppEvent(a, eventInfo, message, user)
+	s.auditLogger.LogAppEvent(a, eventInfo, message)
 }
 
 func (s *Server) logResourceEvent(res *appv1.ResourceNode, ctx context.Context, reason string, action string) {
@@ -1949,7 +1944,7 @@ func (s *Server) logResourceEvent(res *appv1.ResourceNode, ctx context.Context, 
 		user = "Unknown user"
 	}
 	message := fmt.Sprintf("%s %s", user, action)
-	s.auditLogger.LogResourceEvent(res, eventInfo, message, user)
+	s.auditLogger.LogResourceEvent(res, eventInfo, message)
 }
 
 func (s *Server) ListResourceActions(ctx context.Context, q *application.ApplicationResourceRequest) (*application.ResourceActionsListResponse, error) {
