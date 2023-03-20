@@ -22,12 +22,12 @@ func TestListMatrixGenerator(t *testing.T) {
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       fmt.Sprintf("%s-%s", cluster, name),
-				Namespace:  utils.TestNamespace(),
+				Namespace:  utils.ArgoCDNamespace,
 				Finalizers: []string{"resources-finalizer.argocd.argoproj.io"},
 			},
 			Spec: argov1alpha1.ApplicationSpec{
 				Project: "default",
-				Source: &argov1alpha1.ApplicationSource{
+				Source: argov1alpha1.ApplicationSource{
 					RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
 					TargetRevision: "HEAD",
 					Path:           name,
@@ -64,7 +64,7 @@ func TestListMatrixGenerator(t *testing.T) {
 					ApplicationSetTemplateMeta: v1alpha1.ApplicationSetTemplateMeta{Name: "{{values.name}}-{{path.basename}}"},
 					Spec: argov1alpha1.ApplicationSpec{
 						Project: "default",
-						Source: &argov1alpha1.ApplicationSource{
+						Source: argov1alpha1.ApplicationSource{
 							RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
 							TargetRevision: "HEAD",
 							Path:           "{{path}}",
@@ -146,12 +146,12 @@ func TestClusterMatrixGenerator(t *testing.T) {
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       fmt.Sprintf("%s-%s", cluster, name),
-				Namespace:  utils.TestNamespace(),
+				Namespace:  utils.ArgoCDNamespace,
 				Finalizers: []string{"resources-finalizer.argocd.argoproj.io"},
 			},
 			Spec: argov1alpha1.ApplicationSpec{
 				Project: "default",
-				Source: &argov1alpha1.ApplicationSource{
+				Source: argov1alpha1.ApplicationSource{
 					RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
 					TargetRevision: "HEAD",
 					Path:           name,
@@ -190,7 +190,7 @@ func TestClusterMatrixGenerator(t *testing.T) {
 					ApplicationSetTemplateMeta: v1alpha1.ApplicationSetTemplateMeta{Name: "{{name}}-{{path.basename}}"},
 					Spec: argov1alpha1.ApplicationSpec{
 						Project: "default",
-						Source: &argov1alpha1.ApplicationSource{
+						Source: argov1alpha1.ApplicationSource{
 							RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
 							TargetRevision: "HEAD",
 							Path:           "{{path}}",
