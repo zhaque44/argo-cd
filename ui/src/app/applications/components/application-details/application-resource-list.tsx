@@ -1,11 +1,10 @@
 import {DropDown} from 'argo-ui';
-import * as classNames from 'classnames';
 import * as React from 'react';
 
 import * as models from '../../../shared/models';
 import {ResourceIcon} from '../resource-icon';
 import {ResourceLabel} from '../resource-label';
-import {ComparisonStatusIcon, HealthStatusIcon, nodeKey, createdOrNodeKey} from '../utils';
+import {ComparisonStatusIcon, HealthStatusIcon, nodeKey} from '../utils';
 import {Consumer} from '../../../shared/context';
 import * as _ from 'lodash';
 
@@ -25,20 +24,14 @@ export const ApplicationResourceList = ({
                 <div className='columns small-2 xxxlarge-2'>NAME</div>
                 <div className='columns small-2 xxxlarge-2'>GROUP/KIND</div>
                 <div className='columns small-1 xxxlarge-2'>SYNC ORDER</div>
-                <div className='columns small-2 xxxlarge-2'>NAMESPACE</div>
-                <div className='columns small-2 xxxlarge-2'>CREATED AT</div>
+                <div className='columns small-3 xxxlarge-3'>NAMESPACE</div>
                 <div className='columns small-2 xxxlarge-2'>STATUS</div>
             </div>
         </div>
         {resources
-            .sort((first, second) => -createdOrNodeKey(first).localeCompare(createdOrNodeKey(second)))
+            .sort((first, second) => nodeKey(first).localeCompare(nodeKey(second)))
             .map(res => (
-                <div
-                    key={nodeKey(res)}
-                    className={classNames('argo-table-list__row', {
-                        'application-resource-tree__node--orphaned': res.orphaned
-                    })}
-                    onClick={() => onNodeClick(nodeKey(res))}>
+                <div key={nodeKey(res)} className='argo-table-list__row' onClick={() => onNodeClick(nodeKey(res))}>
                     <div className='row'>
                         <div className='columns small-1 xxxlarge-1'>
                             <div className='application-details__resource-icon'>
@@ -53,7 +46,7 @@ export const ApplicationResourceList = ({
                                 <Consumer>
                                     {ctx => (
                                         <span className='application-details__external_link'>
-                                            <a href={ctx.baseHref + 'applications/' + res.namespace + '/' + res.name} title='Open application'>
+                                            <a href={ctx.baseHref + 'applications/' + res.name} title='Open application'>
                                                 <i className='fa fa-external-link-alt' />
                                             </a>
                                         </span>
@@ -62,9 +55,8 @@ export const ApplicationResourceList = ({
                             )}
                         </div>
                         <div className='columns small-2 xxxlarge-2'>{[res.group, res.kind].filter(item => !!item).join('/')}</div>
-                        <div className='columns small-1 xxxlarge-2'>{res.syncWave || '-'}</div>
-                        <div className='columns small-2 xxxlarge-2'>{res.namespace}</div>
-                        <div className='columns small-2 xxxlarge-2'>{res.createdAt}</div>
+                        <div className='columns small-1 xxxlarge-2'>{res.syncOrder}</div>
+                        <div className='columns small-3 xxxlarge-3'>{res.namespace}</div>
                         <div className='columns small-2 xxxlarge-2'>
                             {res.health && (
                                 <React.Fragment>
