@@ -3,15 +3,12 @@ package e2e
 import (
 	"testing"
 
-	"github.com/argoproj/argo-cd/v2/test/e2e/fixture"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 	argov1alpha1 "github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
+	"github.com/argoproj/argo-cd/v2/pkg/apis/applicationset/v1alpha1"
 	. "github.com/argoproj/argo-cd/v2/test/e2e/fixture/applicationsets"
-
-	"github.com/argoproj/argo-cd/v2/pkg/apis/application"
+	"github.com/argoproj/argo-cd/v2/test/e2e/fixture/applicationsets/utils"
 )
 
 var tenSec = int64(10)
@@ -20,17 +17,17 @@ func TestSimpleClusterDecisionResourceGenerator(t *testing.T) {
 
 	expectedApp := argov1alpha1.Application{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       application.ApplicationKind,
+			Kind:       "Application",
 			APIVersion: "argoproj.io/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "cluster1-guestbook",
-			Namespace:  fixture.TestNamespace(),
+			Namespace:  utils.ArgoCDNamespace,
 			Finalizers: []string{"resources-finalizer.argocd.argoproj.io"},
 		},
 		Spec: argov1alpha1.ApplicationSpec{
 			Project: "default",
-			Source: &argov1alpha1.ApplicationSource{
+			Source: argov1alpha1.ApplicationSource{
 				RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
 				TargetRevision: "HEAD",
 				Path:           "guestbook",
@@ -68,7 +65,7 @@ func TestSimpleClusterDecisionResourceGenerator(t *testing.T) {
 					ApplicationSetTemplateMeta: v1alpha1.ApplicationSetTemplateMeta{Name: "{{name}}-guestbook"},
 					Spec: argov1alpha1.ApplicationSpec{
 						Project: "default",
-						Source: &argov1alpha1.ApplicationSource{
+						Source: argov1alpha1.ApplicationSource{
 							RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
 							TargetRevision: "HEAD",
 							Path:           "guestbook",
@@ -122,17 +119,17 @@ func TestSimpleClusterDecisionResourceGeneratorAddingCluster(t *testing.T) {
 
 	expectedAppTemplate := argov1alpha1.Application{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       application.ApplicationKind,
+			Kind:       "Application",
 			APIVersion: "argoproj.io/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "{{name}}-guestbook",
-			Namespace:  fixture.TestNamespace(),
+			Namespace:  utils.ArgoCDNamespace,
 			Finalizers: []string{"resources-finalizer.argocd.argoproj.io"},
 		},
 		Spec: argov1alpha1.ApplicationSpec{
 			Project: "default",
-			Source: &argov1alpha1.ApplicationSource{
+			Source: argov1alpha1.ApplicationSource{
 				RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
 				TargetRevision: "HEAD",
 				Path:           "guestbook",
@@ -179,7 +176,7 @@ func TestSimpleClusterDecisionResourceGeneratorAddingCluster(t *testing.T) {
 					ApplicationSetTemplateMeta: v1alpha1.ApplicationSetTemplateMeta{Name: "{{name}}-guestbook"},
 					Spec: argov1alpha1.ApplicationSpec{
 						Project: "default",
-						Source: &argov1alpha1.ApplicationSource{
+						Source: argov1alpha1.ApplicationSource{
 							RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
 							TargetRevision: "HEAD",
 							Path:           "guestbook",
@@ -217,17 +214,17 @@ func TestSimpleClusterDecisionResourceGeneratorDeletingClusterSecret(t *testing.
 
 	expectedAppTemplate := argov1alpha1.Application{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       application.ApplicationKind,
+			Kind:       "Application",
 			APIVersion: "argoproj.io/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "{{name}}-guestbook",
-			Namespace:  fixture.TestNamespace(),
+			Namespace:  utils.ArgoCDNamespace,
 			Finalizers: []string{"resources-finalizer.argocd.argoproj.io"},
 		},
 		Spec: argov1alpha1.ApplicationSpec{
 			Project: "default",
-			Source: &argov1alpha1.ApplicationSource{
+			Source: argov1alpha1.ApplicationSource{
 				RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
 				TargetRevision: "HEAD",
 				Path:           "guestbook",
@@ -275,7 +272,7 @@ func TestSimpleClusterDecisionResourceGeneratorDeletingClusterSecret(t *testing.
 					ApplicationSetTemplateMeta: v1alpha1.ApplicationSetTemplateMeta{Name: "{{name}}-guestbook"},
 					Spec: argov1alpha1.ApplicationSpec{
 						Project: "default",
-						Source: &argov1alpha1.ApplicationSource{
+						Source: argov1alpha1.ApplicationSource{
 							RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
 							TargetRevision: "HEAD",
 							Path:           "guestbook",
@@ -314,17 +311,17 @@ func TestSimpleClusterDecisionResourceGeneratorDeletingClusterFromResource(t *te
 
 	expectedAppTemplate := argov1alpha1.Application{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       application.ApplicationKind,
+			Kind:       "Application",
 			APIVersion: "argoproj.io/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "{{name}}-guestbook",
-			Namespace:  fixture.TestNamespace(),
+			Namespace:  utils.ArgoCDNamespace,
 			Finalizers: []string{"resources-finalizer.argocd.argoproj.io"},
 		},
 		Spec: argov1alpha1.ApplicationSpec{
 			Project: "default",
-			Source: &argov1alpha1.ApplicationSource{
+			Source: argov1alpha1.ApplicationSource{
 				RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
 				TargetRevision: "HEAD",
 				Path:           "guestbook",
@@ -379,7 +376,7 @@ func TestSimpleClusterDecisionResourceGeneratorDeletingClusterFromResource(t *te
 					ApplicationSetTemplateMeta: v1alpha1.ApplicationSetTemplateMeta{Name: "{{name}}-guestbook"},
 					Spec: argov1alpha1.ApplicationSpec{
 						Project: "default",
-						Source: &argov1alpha1.ApplicationSource{
+						Source: argov1alpha1.ApplicationSource{
 							RepoURL:        "https://github.com/argoproj/argocd-example-apps.git",
 							TargetRevision: "HEAD",
 							Path:           "guestbook",

@@ -6,6 +6,7 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
+	appv1 "github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 	"github.com/argoproj/argo-cd/v2/util/argo"
 	"github.com/argoproj/argo-cd/v2/util/argo/managedfields"
 	appstatecache "github.com/argoproj/argo-cd/v2/util/cache/appstate"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/argoproj/gitops-engine/pkg/diff"
 	"github.com/argoproj/gitops-engine/pkg/utils/kube"
-	"github.com/argoproj/gitops-engine/pkg/utils/kube/scheme"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -39,7 +39,7 @@ func (b *DiffConfigBuilder) WithDiffSettings(id []v1alpha1.ResourceIgnoreDiffere
 
 	overrides := o
 	if overrides == nil {
-		overrides = make(map[string]v1alpha1.ResourceOverride)
+		overrides = make(map[string]appv1.ResourceOverride)
 	}
 	b.diffConfig.overrides = overrides
 	b.diffConfig.ignoreAggregatedRoles = ignoreAggregatedRoles
@@ -80,20 +80,6 @@ func (b *DiffConfigBuilder) WithGVKParser(parser *k8smanagedfields.GvkParser) *D
 	return b
 }
 
-// WithStructuredMergeDiff defines if the diff should be calculated using structured
-// merge.
-func (b *DiffConfigBuilder) WithStructuredMergeDiff(smd bool) *DiffConfigBuilder {
-	b.diffConfig.structuredMergeDiff = smd
-	return b
-}
-
-// WithManager defines the manager that should be using during structured
-// merge diffs.
-func (b *DiffConfigBuilder) WithManager(manager string) *DiffConfigBuilder {
-	b.diffConfig.manager = manager
-	return b
-}
-
 // Build will first validate the current state of the diff config and return the
 // DiffConfig implementation if no errors are found. Will return nil and the error
 // details otherwise.
@@ -112,7 +98,7 @@ type DiffConfig interface {
 	Validate() error
 	// DiffFromCache will verify if it should retrieve the cached ResourceDiff based on this
 	// DiffConfig.
-	DiffFromCache(appName string) (bool, []*v1alpha1.ResourceDiff)
+	DiffFromCache(appName string) (bool, []*appv1.ResourceDiff)
 	// Ignores Application level ignore difference configurations.
 	Ignores() []v1alpha1.ResourceIgnoreDifferences
 	// Overrides is map of system configurations to override the Application ones.
@@ -127,18 +113,11 @@ type DiffConfig interface {
 	// StateCache is used when retrieving the diff from the cache.
 	StateCache() *appstatecache.Cache
 	IgnoreAggregatedRoles() bool
-	// Logger used during the diff.
+	// Logger used during the diff
 	Logger() *logr.Logger
 	// GVKParser returns a parser able to build a TypedValue used in
 	// structured merge diffs.
 	GVKParser() *k8smanagedfields.GvkParser
-	// StructuredMergeDiff defines if the diff should be calculated using
-	// structured merge diffs. Will use standard 3-way merge diffs if
-	// returns false.
-	StructuredMergeDiff() bool
-	// Manager returns the manager that should be used by the diff while
-	// calculating the structured merge diff.
-	Manager() string
 }
 
 // diffConfig defines the configurations used while applying diffs.
@@ -153,8 +132,6 @@ type diffConfig struct {
 	ignoreAggregatedRoles bool
 	logger                *logr.Logger
 	gvkParser             *k8smanagedfields.GvkParser
-	structuredMergeDiff   bool
-	manager               string
 }
 
 func (c *diffConfig) Ignores() []v1alpha1.ResourceIgnoreDifferences {
@@ -186,12 +163,6 @@ func (c *diffConfig) Logger() *logr.Logger {
 }
 func (c *diffConfig) GVKParser() *k8smanagedfields.GvkParser {
 	return c.gvkParser
-}
-func (c *diffConfig) StructuredMergeDiff() bool {
-	return c.structuredMergeDiff
-}
-func (c *diffConfig) Manager() string {
-	return c.manager
 }
 
 // Validate will check the current state of this diffConfig and return
@@ -246,13 +217,9 @@ func StateDiffs(lives, configs []*unstructured.Unstructured, diffConfig DiffConf
 	if err != nil {
 		return nil, err
 	}
-
 	diffOpts := []diff.Option{
 		diff.WithNormalizer(diffNormalizer),
 		diff.IgnoreAggregatedRoles(diffConfig.IgnoreAggregatedRoles()),
-		diff.WithStructuredMergeDiff(diffConfig.StructuredMergeDiff()),
-		diff.WithGVKParser(diffConfig.GVKParser()),
-		diff.WithManager(diffConfig.Manager()),
 	}
 
 	if diffConfig.Logger() != nil {
@@ -266,13 +233,13 @@ func StateDiffs(lives, configs []*unstructured.Unstructured, diffConfig DiffConf
 	return diff.DiffArray(normResults.Targets, normResults.Lives, diffOpts...)
 }
 
-func diffArrayCached(configArray []*unstructured.Unstructured, liveArray []*unstructured.Unstructured, cachedDiff []*v1alpha1.ResourceDiff, opts ...diff.Option) (*diff.DiffResultList, error) {
+func diffArrayCached(configArray []*unstructured.Unstructured, liveArray []*unstructured.Unstructured, cachedDiff []*appv1.ResourceDiff, opts ...diff.Option) (*diff.DiffResultList, error) {
 	numItems := len(configArray)
 	if len(liveArray) != numItems {
 		return nil, fmt.Errorf("left and right arrays have mismatched lengths")
 	}
 
-	diffByKey := map[kube.ResourceKey]*v1alpha1.ResourceDiff{}
+	diffByKey := map[kube.ResourceKey]*appv1.ResourceDiff{}
 	for i := range cachedDiff {
 		res := cachedDiff[i]
 		diffByKey[kube.NewResourceKey(res.Group, res.Kind, res.Namespace, res.Name)] = cachedDiff[i]
@@ -321,11 +288,11 @@ func diffArrayCached(configArray []*unstructured.Unstructured, liveArray []*unst
 // DiffFromCache will verify if it should retrieve the cached ResourceDiff based on this
 // DiffConfig. Returns true and the cached ResourceDiff if configured to use the cache.
 // Returns false and nil otherwise.
-func (c *diffConfig) DiffFromCache(appName string) (bool, []*v1alpha1.ResourceDiff) {
+func (c *diffConfig) DiffFromCache(appName string) (bool, []*appv1.ResourceDiff) {
 	if c.noCache || c.stateCache == nil || appName == "" {
 		return false, nil
 	}
-	cachedDiff := make([]*v1alpha1.ResourceDiff, 0)
+	cachedDiff := make([]*appv1.ResourceDiff, 0)
 	if c.stateCache != nil && c.stateCache.GetAppManagedResources(appName, &cachedDiff) == nil {
 		return true, cachedDiff
 	}
@@ -356,7 +323,7 @@ func preDiffNormalize(lives, targets []*unstructured.Unstructured, diffConfig Di
 			idc := NewIgnoreDiffConfig(diffConfig.Ignores(), diffConfig.Overrides())
 			ok, ignoreDiff := idc.HasIgnoreDifference(gvk.Group, gvk.Kind, target.GetName(), target.GetNamespace())
 			if ok && len(ignoreDiff.ManagedFieldsManagers) > 0 {
-				pt := scheme.ResolveParseableType(gvk, diffConfig.GVKParser())
+				pt := managedfields.ResolveParseableType(gvk, diffConfig.GVKParser())
 				var err error
 				live, target, err = managedfields.Normalize(live, target, ignoreDiff.ManagedFieldsManagers, pt)
 				if err != nil {
