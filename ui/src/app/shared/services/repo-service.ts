@@ -27,41 +27,6 @@ export class RepositoriesService {
         insecure,
         enableLfs,
         proxy,
-        project,
-        forceHttpBasicAuth,
-        enableOCI
-    }: {
-        type: string;
-        name: string;
-        url: string;
-        username: string;
-        password: string;
-        tlsClientCertData: string;
-        tlsClientCertKey: string;
-        insecure: boolean;
-        enableLfs: boolean;
-        proxy: string;
-        project?: string;
-        forceHttpBasicAuth?: boolean;
-        enableOCI: boolean;
-    }): Promise<models.Repository> {
-        return requests
-            .post('/repositories')
-            .send({type, name, repo: url, username, password, tlsClientCertData, tlsClientCertKey, insecure, enableLfs, proxy, project, forceHttpBasicAuth, enableOCI})
-            .then(res => res.body as models.Repository);
-    }
-
-    public updateHTTPS({
-        type,
-        name,
-        url,
-        username,
-        password,
-        tlsClientCertData,
-        tlsClientCertKey,
-        insecure,
-        enableLfs,
-        proxy,
         project
     }: {
         type: string;
@@ -77,7 +42,7 @@ export class RepositoriesService {
         project?: string;
     }): Promise<models.Repository> {
         return requests
-            .put(`/repositories/${encodeURIComponent(url)}`)
+            .post('/repositories')
             .send({type, name, repo: url, username, password, tlsClientCertData, tlsClientCertKey, insecure, enableLfs, proxy, project})
             .then(res => res.body as models.Repository);
     }
@@ -150,34 +115,6 @@ export class RepositoriesService {
                 tlsClientCertKey,
                 insecure,
                 enableLfs,
-                proxy,
-                project
-            })
-            .then(res => res.body as models.Repository);
-    }
-
-    public createGoogleCloudSource({
-        type,
-        name,
-        url,
-        gcpServiceAccountKey,
-        proxy,
-        project
-    }: {
-        type: string;
-        name: string;
-        url: string;
-        gcpServiceAccountKey: string;
-        proxy: string;
-        project?: string;
-    }): Promise<models.Repository> {
-        return requests
-            .post('/repositories')
-            .send({
-                type,
-                name,
-                repo: url,
-                gcpServiceAccountKey,
                 proxy,
                 project
             })

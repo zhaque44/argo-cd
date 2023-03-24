@@ -1,26 +1,21 @@
 package v1alpha1
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
+	fmt "fmt"
+	"io/ioutil"
 	"os"
 	"path"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-	"k8s.io/utils/pointer"
-
 	argocdcommon "github.com/argoproj/argo-cd/v2/common"
+	"k8s.io/utils/pointer"
 
 	"github.com/argoproj/gitops-engine/pkg/sync/common"
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func TestAppProject_IsSourcePermitted(t *testing.T) {
@@ -52,47 +47,6 @@ func TestAppProject_IsSourcePermitted(t *testing.T) {
 		projSources: []string{"https://gitlab.com/group/*/*/*"}, appSource: "https://gitlab.com/group/sub-group/repo/owner", isPermitted: true,
 	}, {
 		projSources: []string{"https://gitlab.com/group/**"}, appSource: "https://gitlab.com/group/sub-group/repo/owner", isPermitted: true,
-	}}
-
-	for _, data := range testData {
-		proj := AppProject{
-			Spec: AppProjectSpec{
-				SourceRepos: data.projSources,
-			},
-		}
-		assert.Equal(t, proj.IsSourcePermitted(ApplicationSource{
-			RepoURL: data.appSource,
-		}), data.isPermitted)
-	}
-}
-
-func TestAppProject_IsNegatedSourcePermitted(t *testing.T) {
-	testData := []struct {
-		projSources []string
-		appSource   string
-		isPermitted bool
-	}{{
-		projSources: []string{"!https://github.com/argoproj/test.git"}, appSource: "https://github.com/argoproj/test.git", isPermitted: false,
-	}, {
-		projSources: []string{"!ssh://git@GITHUB.com:argoproj/test"}, appSource: "ssh://git@github.com:argoproj/test", isPermitted: false,
-	}, {
-		projSources: []string{"!https://github.com/argoproj/*"}, appSource: "https://github.com/argoproj/argoproj.git", isPermitted: false,
-	}, {
-		projSources: []string{"https://github.com/test1/test.git", "!https://github.com/test2/test.git"}, appSource: "https://github.com/test2/test.git", isPermitted: false,
-	}, {
-		projSources: []string{"!https://github.com/argoproj/foo*"}, appSource: "https://github.com/argoproj/foo1", isPermitted: false,
-	}, {
-		projSources: []string{"!https://gitlab.com/group/*/*"}, appSource: "https://gitlab.com/group/repo/owner", isPermitted: false,
-	}, {
-		projSources: []string{"!https://gitlab.com/group/*/*/*"}, appSource: "https://gitlab.com/group/sub-group/repo/owner", isPermitted: false,
-	}, {
-		projSources: []string{"!https://gitlab.com/group/**"}, appSource: "https://gitlab.com/group/sub-group/repo/owner", isPermitted: false,
-	}, {
-		projSources: []string{"*"}, appSource: "https://github.com/argoproj/test.git", isPermitted: true,
-	}, {
-		projSources: []string{"https://github.com/argoproj/test1.git", "*"}, appSource: "https://github.com/argoproj/test2.git", isPermitted: true,
-	}, {
-		projSources: []string{"!https://github.com/argoproj/*.git", "*"}, appSource: "https://github.com/argoproj1/test2.git", isPermitted: true,
 	}}
 
 	for _, data := range testData {
@@ -187,249 +141,8 @@ func TestAppProject_IsDestinationPermitted(t *testing.T) {
 				Destinations: data.projDest,
 			},
 		}
-		permitted, _ := proj.IsDestinationPermitted(data.appDest, func(project string) ([]*Cluster, error) {
-			return []*Cluster{}, nil
-		})
-		assert.Equal(t, data.isPermitted, permitted)
+		assert.Equal(t, proj.IsDestinationPermitted(data.appDest), data.isPermitted)
 	}
-}
-
-func TestAppProject_IsNegatedDestinationPermitted(t *testing.T) {
-	testData := []struct {
-		projDest    []ApplicationDestination
-		appDest     ApplicationDestination
-		isPermitted bool
-	}{{
-		projDest: []ApplicationDestination{{
-			Server: "!https://kubernetes.default.svc", Namespace: "default",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "default"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "https://kubernetes.default.svc", Namespace: "!default",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "kube-system"},
-		isPermitted: true,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "!https://my-cluster", Namespace: "default",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "default"},
-		isPermitted: true,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "!https://kubernetes.default.svc", Namespace: "*",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "kube-system"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "!https://*.default.svc", Namespace: "default",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "default"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "!https://team1-*", Namespace: "default",
-		}},
-		appDest:     ApplicationDestination{Server: "https://test2-dev-cluster", Namespace: "default"},
-		isPermitted: true,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "https://kubernetes.default.svc", Namespace: "!test-*",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "test-foo"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "https://kubernetes.default.svc", Namespace: "!test-*",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "test"},
-		isPermitted: true,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "", Namespace: "*", Name: "!test",
-		}},
-		appDest:     ApplicationDestination{Name: "test", Namespace: "test"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "", Namespace: "*", Name: "!test2",
-		}},
-		appDest:     ApplicationDestination{Name: "test", Namespace: "test"},
-		isPermitted: true,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "*", Namespace: "kube-system",
-		}, {
-			Server: "*", Namespace: "!kube-system",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "kube-system"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "*", Namespace: "*",
-		}, {
-			Server: "*", Namespace: "!kube-system",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "kube-system"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "https://kubernetes.default.svc", Namespace: "*",
-		}, {
-			Server: "!https://kubernetes.default.svc", Namespace: "*",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "kube-system"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "*", Namespace: "*",
-		}, {
-			Server: "!https://kubernetes.default.svc", Namespace: "kube-system",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "kube-system"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "*", Namespace: "*",
-		}, {
-			Server: "!https://kubernetes.default.svc", Namespace: "kube-system",
-		}, {
-			Server: "*", Namespace: "!kube-system",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "kube-system"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "*", Namespace: "*",
-		}, {
-			Server: "!https://kubernetes.default.svc", Namespace: "kube-system",
-		}, {
-			Server: "*", Namespace: "!kube-system",
-		}},
-		appDest:     ApplicationDestination{Server: "https://kubernetes.default.svc", Namespace: "default"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "*", Namespace: "*",
-		}, {
-			Server: "!https://kubernetes.default.svc", Namespace: "kube-system",
-		}, {
-			Server: "*", Namespace: "!kube-system",
-		}},
-		appDest:     ApplicationDestination{Server: "https://test-dev-cluster", Namespace: "kube-system"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "", Namespace: "*", Name: "test",
-		}, {
-			Server: "", Namespace: "*", Name: "!test",
-		}},
-		appDest:     ApplicationDestination{Name: "test", Namespace: "test"},
-		isPermitted: false,
-	}}
-
-	for _, data := range testData {
-		proj := AppProject{
-			Spec: AppProjectSpec{
-				Destinations: data.projDest,
-			},
-		}
-		permitted, _ := proj.IsDestinationPermitted(data.appDest, func(project string) ([]*Cluster, error) {
-			return []*Cluster{}, nil
-		})
-		assert.Equal(t, data.isPermitted, permitted)
-	}
-}
-
-func TestAppProject_IsDestinationPermitted_PermitOnlyProjectScopedClusters(t *testing.T) {
-	testData := []struct {
-		projDest    []ApplicationDestination
-		appDest     ApplicationDestination
-		clusters    []*Cluster
-		isPermitted bool
-	}{{
-		projDest: []ApplicationDestination{{
-			Server: "https://team1-*", Namespace: "default",
-		}},
-		clusters:    []*Cluster{},
-		appDest:     ApplicationDestination{Server: "https://team1-something.com", Namespace: "default"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "https://my-cluster.123.com", Namespace: "default",
-		}},
-		appDest: ApplicationDestination{Server: "https://my-cluster.123.com", Namespace: "default"},
-		clusters: []*Cluster{{
-			Server: "https://my-cluster.123.com",
-		}},
-		isPermitted: true,
-	}, {
-		projDest: []ApplicationDestination{{
-			Server: "https://my-cluster.123.com", Namespace: "default",
-		}},
-		appDest: ApplicationDestination{Server: "https://some-other-cluster.com", Namespace: "default"},
-		clusters: []*Cluster{{
-			Server: "https://my-cluster.123.com",
-		}},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Name: "some-server", Namespace: "default",
-		}},
-		clusters:    []*Cluster{},
-		appDest:     ApplicationDestination{Name: "some-server", Namespace: "default"},
-		isPermitted: false,
-	}, {
-		projDest: []ApplicationDestination{{
-			Name: "some-other-server", Namespace: "default",
-		}},
-		appDest: ApplicationDestination{Name: "some-other-server", Namespace: "default"},
-		clusters: []*Cluster{{
-			Name: "some-other-server",
-		}},
-		isPermitted: true,
-	}, {
-		projDest: []ApplicationDestination{{
-			Name: "some-server", Namespace: "default",
-		}},
-		appDest: ApplicationDestination{Name: "some-other-server", Namespace: "default"},
-		clusters: []*Cluster{{
-			Name: "some-server",
-		}},
-		isPermitted: false,
-	}}
-
-	for _, data := range testData {
-		proj := AppProject{
-			Spec: AppProjectSpec{
-				PermitOnlyProjectScopedClusters: true,
-				Destinations:                    data.projDest,
-			},
-		}
-
-		permitted, _ := proj.IsDestinationPermitted(data.appDest, func(_ string) ([]*Cluster, error) {
-			return data.clusters, nil
-		})
-		assert.Equal(t, data.isPermitted, permitted)
-	}
-
-	proj := AppProject{
-		Spec: AppProjectSpec{
-			PermitOnlyProjectScopedClusters: true,
-			Destinations: []ApplicationDestination{{
-				Server: "https://my-cluster.123.com", Namespace: "default",
-			}},
-		},
-	}
-
-	_, err := proj.IsDestinationPermitted(ApplicationDestination{Server: "https://my-cluster.123.com", Namespace: "default"}, func(_ string) ([]*Cluster, error) {
-		return nil, errors.New("some error")
-	})
-	assert.NotNil(t, err)
-	assert.True(t, strings.Contains(err.Error(), "could not retrieve project clusters"))
 }
 
 func TestAppProject_IsGroupKindPermitted(t *testing.T) {
@@ -552,42 +265,11 @@ func newTestProject() *AppProject {
 	return &p
 }
 
-// TestAppProject_ValidateSources tests for an invalid source
-func TestAppProject_ValidateSources(t *testing.T) {
-	p := newTestProject()
-	err := p.ValidateProject()
-	assert.NoError(t, err)
-	badSources := []string{
-		"!*",
-	}
-	for _, badName := range badSources {
-		p.Spec.SourceRepos = []string{badName}
-		err = p.ValidateProject()
-		assert.Error(t, err)
-	}
-
-	duplicateSources := []string{
-		"foo",
-		"foo",
-	}
-	p.Spec.SourceRepos = duplicateSources
-	err = p.ValidateProject()
-	assert.Error(t, err)
-}
-
 // TestAppProject_ValidateDestinations tests for an invalid destination
 func TestAppProject_ValidateDestinations(t *testing.T) {
 	p := newTestProject()
 	err := p.ValidateProject()
 	assert.NoError(t, err)
-	badNamespaces := []string{
-		"!*",
-	}
-	for _, badName := range badNamespaces {
-		p.Spec.Destinations[0].Namespace = badName
-		err = p.ValidateProject()
-		assert.Error(t, err)
-	}
 
 	goodNamespaces := []string{
 		"*",
@@ -599,15 +281,6 @@ func TestAppProject_ValidateDestinations(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	badServers := []string{
-		"!*",
-	}
-	for _, badServer := range badServers {
-		p.Spec.Destinations[0].Server = badServer
-		err = p.ValidateProject()
-		assert.Error(t, err)
-	}
-
 	goodServers := []string{
 		"*",
 		"some-server",
@@ -616,15 +289,6 @@ func TestAppProject_ValidateDestinations(t *testing.T) {
 		p.Spec.Destinations[0].Server = badName
 		err = p.ValidateProject()
 		assert.NoError(t, err)
-	}
-
-	badNames := []string{
-		"!*",
-	}
-	for _, badName := range badNames {
-		p.Spec.Destinations[0].Name = badName
-		err = p.ValidateProject()
-		assert.Error(t, err)
 	}
 
 	goodNames := []string{
@@ -663,12 +327,6 @@ func TestAppProject_ValidateDestinations(t *testing.T) {
 	p.Spec.Destinations = []ApplicationDestination{cluster1Destination, cluster2Destination}
 	err = p.ValidateProject()
 	assert.NoError(t, err)
-
-	t.Run("must reject duplicate source namespaces", func(t *testing.T) {
-		p.Spec.SourceNamespaces = []string{"argocd", "argocd"}
-		err = p.ValidateProject()
-		assert.Error(t, err)
-	})
 }
 
 // TestValidateRoleName tests for an invalid role name
@@ -719,8 +377,6 @@ func TestAppProject_ValidateGroupName(t *testing.T) {
 		"my,group",
 		"my\ngroup",
 		"my\rgroup",
-		" my:group",
-		"my:group ",
 	}
 	for _, badName := range badGroupNames {
 		p.Spec.Roles[0].Groups = []string{badName}
@@ -735,22 +391,6 @@ func TestAppProject_ValidateGroupName(t *testing.T) {
 		err = p.ValidateProject()
 		assert.NoError(t, err)
 	}
-}
-
-func TestAppProject_ValidateSyncWindowList(t *testing.T) {
-	t.Run("WorkingSyncWindow", func(t *testing.T) {
-		p := newTestProjectWithSyncWindows()
-		err := p.ValidateProject()
-		assert.NoError(t, err)
-	})
-	t.Run("HasNilSyncWindow", func(t *testing.T) {
-		p := newTestProjectWithSyncWindows()
-		err := p.ValidateProject()
-		assert.NoError(t, err)
-		p.Spec.SyncWindows = append(p.Spec.SyncWindows, nil)
-		err = p.ValidateProject()
-		assert.NoError(t, err)
-	})
 }
 
 // TestInvalidPolicyRules checks various errors in policy rules
@@ -865,9 +505,9 @@ func TestAppSourceEquality(t *testing.T) {
 		},
 	}
 	right := left.DeepCopy()
-	assert.True(t, left.Equals(right))
+	assert.True(t, left.Equals(*right))
 	right.Directory.Recurse = false
-	assert.False(t, left.Equals(right))
+	assert.False(t, left.Equals(*right))
 }
 
 func TestAppDestinationEquality(t *testing.T) {
@@ -1317,96 +957,6 @@ func TestNewHelmParameter(t *testing.T) {
 	})
 }
 
-func TestNewKustomizeReplica(t *testing.T) {
-	t.Run("Valid", func(t *testing.T) {
-		r, err := NewKustomizeReplica("my-deployment=2")
-		assert.NoError(t, err)
-		assert.Equal(t, &KustomizeReplica{Name: "my-deployment", Count: intstr.Parse("2")}, r)
-	})
-	t.Run("InvalidFormat", func(t *testing.T) {
-		_, err := NewKustomizeReplica("garbage")
-		assert.EqualError(t, err, "expected parameter of the form: name=count. Received: garbage")
-	})
-	t.Run("InvalidCount", func(t *testing.T) {
-		_, err := NewKustomizeReplica("my-deployment=garbage")
-		assert.EqualError(t, err, "expected integer value for count. Received: garbage")
-	})
-}
-
-func TestKustomizeReplica_GetIntCount(t *testing.T) {
-	t.Run("String which can be converted to integer", func(t *testing.T) {
-		kr := KustomizeReplica{
-			Name:  "test",
-			Count: intstr.FromString("2"),
-		}
-		count, err := kr.GetIntCount()
-		assert.NoError(t, err)
-		assert.Equal(t, 2, count)
-	})
-	t.Run("String which cannot be converted to integer", func(t *testing.T) {
-		kr := KustomizeReplica{
-			Name:  "test",
-			Count: intstr.FromString("garbage"),
-		}
-		count, err := kr.GetIntCount()
-		assert.EqualError(t, err, "expected integer value for count. Received: garbage")
-		assert.Equal(t, 0, count)
-	})
-	t.Run("Integer", func(t *testing.T) {
-		kr := KustomizeReplica{
-			Name:  "test",
-			Count: intstr.FromInt(2),
-		}
-		count, err := kr.GetIntCount()
-		assert.NoError(t, err)
-		assert.Equal(t, 2, count)
-	})
-}
-
-func TestApplicationSourceKustomize_MergeReplica(t *testing.T) {
-	r1 := KustomizeReplica{
-		Name:  "my-deployment",
-		Count: intstr.FromInt(2),
-	}
-	r2 := KustomizeReplica{
-		Name:  "my-deployment",
-		Count: intstr.FromInt(4),
-	}
-	t.Run("Add", func(t *testing.T) {
-		k := ApplicationSourceKustomize{Replicas: KustomizeReplicas{}}
-		k.MergeReplica(r1)
-		assert.Equal(t, KustomizeReplicas{r1}, k.Replicas)
-	})
-	t.Run("Replace", func(t *testing.T) {
-		k := ApplicationSourceKustomize{Replicas: KustomizeReplicas{r1}}
-		k.MergeReplica(r2)
-		assert.Equal(t, 1, len(k.Replicas))
-		assert.Equal(t, k.Replicas[0].Name, r2.Name)
-		assert.Equal(t, k.Replicas[0].Count, r2.Count)
-	})
-}
-func TestApplicationSourceKustomize_FindByName(t *testing.T) {
-	r1 := KustomizeReplica{
-		Name:  "my-deployment",
-		Count: intstr.FromInt(2),
-	}
-	r2 := KustomizeReplica{
-		Name:  "my-statefulset",
-		Count: intstr.FromInt(4),
-	}
-	Replicas := KustomizeReplicas{r1, r2}
-	t.Run("Found", func(t *testing.T) {
-		i1 := Replicas.FindByName("my-deployment")
-		i2 := Replicas.FindByName("my-statefulset")
-		assert.Equal(t, 0, i1)
-		assert.Equal(t, 1, i2)
-	})
-	t.Run("Not Found", func(t *testing.T) {
-		i := Replicas.FindByName("not-found")
-		assert.Equal(t, -1, i)
-	})
-}
-
 func TestApplicationSourceHelm_IsZero(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -1438,7 +988,6 @@ func TestApplicationSourceKustomize_IsZero(t *testing.T) {
 		{"NamePrefix", &ApplicationSourceKustomize{NamePrefix: "foo"}, false},
 		{"NameSuffix", &ApplicationSourceKustomize{NameSuffix: "foo"}, false},
 		{"Images", &ApplicationSourceKustomize{Images: []KustomizeImage{""}}, false},
-		{"Replicas", &ApplicationSourceKustomize{Replicas: []KustomizeReplica{{Name: "", Count: intstr.FromInt(0)}}}, false},
 		{"CommonLabels", &ApplicationSourceKustomize{CommonLabels: map[string]string{"": ""}}, false},
 		{"CommonAnnotations", &ApplicationSourceKustomize{CommonAnnotations: map[string]string{"": ""}}, false},
 	}
@@ -3096,7 +2645,7 @@ func Test_validateGroupName(t *testing.T) {
 		{"Normal group name", "foo", true},
 		{"Quoted with commas", "\"foo,bar,baz\"", true},
 		{"Quoted without commas", "\"foo\"", true},
-		{"Quoted with leading and trailing whitespace", "  \"foo\" ", false},
+		{"Quoted with leading and trailing whitespace", "  \"foo\" ", true},
 		{"Empty group name", "", false},
 		{"Empty group name with quotes", "\"\"", false},
 		{"Unquoted with comma", "foo,bar,baz", false},
@@ -3124,11 +2673,11 @@ func Test_validateGroupName(t *testing.T) {
 func TestGetCAPath(t *testing.T) {
 
 	temppath := t.TempDir()
-	cert, err := os.ReadFile("../../../../test/fixture/certs/argocd-test-server.crt")
+	cert, err := ioutil.ReadFile("../../../../test/fixture/certs/argocd-test-server.crt")
 	if err != nil {
 		panic(err)
 	}
-	err = os.WriteFile(path.Join(temppath, "foo.example.com"), cert, 0666)
+	err = ioutil.WriteFile(path.Join(temppath, "foo.example.com"), cert, 0666)
 	if err != nil {
 		panic(err)
 	}
@@ -3158,431 +2707,5 @@ func TestGetCAPath(t *testing.T) {
 	for _, str := range invalidpath {
 		path := getCAPath(str)
 		assert.Empty(t, path)
-	}
-}
-
-func TestAppProjectIsSourceNamespacePermitted(t *testing.T) {
-	app1 := &Application{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "app1",
-			Namespace: "argocd",
-		},
-		Spec: ApplicationSpec{},
-	}
-	app2 := &Application{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "app2",
-			Namespace: "some-ns",
-		},
-		Spec: ApplicationSpec{},
-	}
-	app3 := &Application{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "app2",
-			Namespace: "",
-		},
-		Spec: ApplicationSpec{},
-	}
-	app4 := &Application{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "app2",
-			Namespace: "other-ns",
-		},
-		Spec: ApplicationSpec{},
-	}
-	app5 := &Application{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "app2",
-			Namespace: "some-ns1",
-		},
-		Spec: ApplicationSpec{},
-	}
-	app6 := &Application{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "app2",
-			Namespace: "some-ns2",
-		},
-		Spec: ApplicationSpec{},
-	}
-	app7 := &Application{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "app2",
-			Namespace: "someotherns",
-		},
-		Spec: ApplicationSpec{},
-	}
-	t.Run("App in same namespace as controller", func(t *testing.T) {
-		proj := &AppProject{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "default",
-				Namespace: "argocd",
-			},
-			Spec: AppProjectSpec{
-				SourceNamespaces: []string{"other-ns"},
-			},
-		}
-		// app1 is installed to argocd namespace, controller as well
-		assert.True(t, proj.IsAppNamespacePermitted(app1, "argocd"))
-		// app2 is installed to some-ns namespace, controller as well
-		assert.True(t, proj.IsAppNamespacePermitted(app2, "some-ns"))
-		// app3 has no namespace set, so will be implicitly created in controller's namespace
-		assert.True(t, proj.IsAppNamespacePermitted(app3, "argocd"))
-	})
-	t.Run("App not permitted when sourceNamespaces is empty", func(t *testing.T) {
-		proj := &AppProject{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "default",
-				Namespace: "argocd",
-			},
-			Spec: AppProjectSpec{
-				SourceNamespaces: []string{},
-			},
-		}
-		// app1 is installed to argocd namespace
-		assert.True(t, proj.IsAppNamespacePermitted(app1, "argocd"))
-		// app2 is installed to some-ns, controller running in argocd
-		assert.False(t, proj.IsAppNamespacePermitted(app2, "argocd"))
-	})
-
-	t.Run("App permitted when sourceNamespaces has app namespace", func(t *testing.T) {
-		proj := &AppProject{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "default",
-				Namespace: "argocd",
-			},
-			Spec: AppProjectSpec{
-				SourceNamespaces: []string{"some-ns"},
-			},
-		}
-		// app2 is installed to some-ns, controller running in argocd
-		assert.True(t, proj.IsAppNamespacePermitted(app2, "argocd"))
-		// app4 is installed to other-ns, controller running in argocd
-		assert.False(t, proj.IsAppNamespacePermitted(app4, "argocd"))
-	})
-
-	t.Run("App permitted by glob pattern", func(t *testing.T) {
-		proj := &AppProject{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "default",
-				Namespace: "argocd",
-			},
-			Spec: AppProjectSpec{
-				SourceNamespaces: []string{"some-*"},
-			},
-		}
-		// app5 is installed to some-ns1, controller running in argocd
-		assert.True(t, proj.IsAppNamespacePermitted(app5, "argocd"))
-		// app6 is installed to some-ns2, controller running in argocd
-		assert.True(t, proj.IsAppNamespacePermitted(app6, "argocd"))
-		// app7 is installed to someotherns, controller running in argocd
-		assert.False(t, proj.IsAppNamespacePermitted(app7, "argocd"))
-	})
-
-}
-
-func Test_RBACName(t *testing.T) {
-	testApp := func(namespace, project string) *Application {
-		return &Application{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-app",
-				Namespace: namespace,
-			},
-			Spec: ApplicationSpec{
-				Project: project,
-			},
-		}
-	}
-	t.Run("App in same namespace as controller when ns is argocd", func(t *testing.T) {
-		a := testApp("argocd", "default")
-		assert.Equal(t, "default/test-app", a.RBACName("argocd"))
-	})
-	t.Run("App in same namespace as controller when ns is not argocd", func(t *testing.T) {
-		a := testApp("some-ns", "default")
-		assert.Equal(t, "default/test-app", a.RBACName("some-ns"))
-	})
-	t.Run("App in different namespace as controller when ns is argocd", func(t *testing.T) {
-		a := testApp("some-ns", "default")
-		assert.Equal(t, "default/some-ns/test-app", a.RBACName("argocd"))
-	})
-	t.Run("App in different namespace as controller when ns is not argocd", func(t *testing.T) {
-		a := testApp("some-ns", "default")
-		assert.Equal(t, "default/some-ns/test-app", a.RBACName("other-ns"))
-	})
-	t.Run("App in same namespace as controller when project is not yet set", func(t *testing.T) {
-		a := testApp("argocd", "")
-		assert.Equal(t, "default/test-app", a.RBACName("argocd"))
-	})
-	t.Run("App in same namespace as controller when ns is not yet set", func(t *testing.T) {
-		a := testApp("", "")
-		assert.Equal(t, "default/test-app", a.RBACName("argocd"))
-	})
-}
-
-func TestGetSummary(t *testing.T) {
-	tree := ApplicationTree{}
-	app := newTestApp()
-
-	summary := tree.GetSummary(app)
-	assert.Equal(t, len(summary.ExternalURLs), 0)
-
-	const annotationName = argocdcommon.AnnotationKeyLinkPrefix + "/my-link"
-	const url = "https://example.com"
-	app.Annotations = make(map[string]string)
-	app.Annotations[annotationName] = url
-
-	summary = tree.GetSummary(app)
-	assert.Equal(t, len(summary.ExternalURLs), 1)
-	assert.Equal(t, summary.ExternalURLs[0], url)
-}
-
-func TestApplicationSourcePluginParameters_Environ_string(t *testing.T) {
-	params := ApplicationSourcePluginParameters{
-		{
-			Name:    "version",
-			String_: pointer.String("1.2.3"),
-		},
-	}
-	environ, err := params.Environ()
-	require.NoError(t, err)
-	assert.Len(t, environ, 2)
-	assert.Contains(t, environ, "PARAM_VERSION=1.2.3")
-	paramsJson, err := json.Marshal(params)
-	require.NoError(t, err)
-	assert.Contains(t, environ, fmt.Sprintf("ARGOCD_APP_PARAMETERS=%s", paramsJson))
-}
-
-func TestApplicationSourcePluginParameters_Environ_array(t *testing.T) {
-	params := ApplicationSourcePluginParameters{
-		{
-			Name:          "dependencies",
-			OptionalArray: &OptionalArray{Array: []string{"redis", "minio"}},
-		},
-	}
-	environ, err := params.Environ()
-	require.NoError(t, err)
-	assert.Len(t, environ, 3)
-	assert.Contains(t, environ, "PARAM_DEPENDENCIES_0=redis")
-	assert.Contains(t, environ, "PARAM_DEPENDENCIES_1=minio")
-	paramsJson, err := json.Marshal(params)
-	require.NoError(t, err)
-	assert.Contains(t, environ, fmt.Sprintf("ARGOCD_APP_PARAMETERS=%s", paramsJson))
-}
-
-func TestApplicationSourcePluginParameters_Environ_map(t *testing.T) {
-	params := ApplicationSourcePluginParameters{
-		{
-			Name: "helm-parameters",
-			OptionalMap: &OptionalMap{
-				Map: map[string]string{
-					"image.repo": "quay.io/argoproj/argo-cd",
-					"image.tag":  "v2.4.0",
-				},
-			},
-		},
-	}
-	environ, err := params.Environ()
-	require.NoError(t, err)
-	assert.Len(t, environ, 3)
-	assert.Contains(t, environ, "PARAM_HELM_PARAMETERS_IMAGE_REPO=quay.io/argoproj/argo-cd")
-	assert.Contains(t, environ, "PARAM_HELM_PARAMETERS_IMAGE_TAG=v2.4.0")
-	paramsJson, err := json.Marshal(params)
-	require.NoError(t, err)
-	assert.Contains(t, environ, fmt.Sprintf("ARGOCD_APP_PARAMETERS=%s", paramsJson))
-}
-
-func TestApplicationSourcePluginParameters_Environ_all(t *testing.T) {
-	// Technically there's no rule against specifying multiple types as values. It's up to the CMP how to handle them.
-	// Name collisions can happen for the convenience env vars. When in doubt, CMP authors should use the JSON env var.
-	params := ApplicationSourcePluginParameters{
-		{
-			Name:    "some-name",
-			String_: pointer.String("1.2.3"),
-			OptionalArray: &OptionalArray{
-				Array: []string{"redis", "minio"},
-			},
-			OptionalMap: &OptionalMap{
-				Map: map[string]string{
-					"image.repo": "quay.io/argoproj/argo-cd",
-					"image.tag":  "v2.4.0",
-				},
-			},
-		},
-	}
-	environ, err := params.Environ()
-	require.NoError(t, err)
-	assert.Len(t, environ, 6)
-	assert.Contains(t, environ, "PARAM_SOME_NAME=1.2.3")
-	assert.Contains(t, environ, "PARAM_SOME_NAME_0=redis")
-	assert.Contains(t, environ, "PARAM_SOME_NAME_1=minio")
-	assert.Contains(t, environ, "PARAM_SOME_NAME_IMAGE_REPO=quay.io/argoproj/argo-cd")
-	assert.Contains(t, environ, "PARAM_SOME_NAME_IMAGE_TAG=v2.4.0")
-	paramsJson, err := json.Marshal(params)
-	require.NoError(t, err)
-	assert.Contains(t, environ, fmt.Sprintf("ARGOCD_APP_PARAMETERS=%s", paramsJson))
-}
-
-func getApplicationSpec() *ApplicationSpec {
-	return &ApplicationSpec{
-		Source: &ApplicationSource{
-			Path: "source",
-		}, Sources: ApplicationSources{
-			{
-				Path: "sources/source1",
-			}, {
-				Path: "sources/source2",
-			},
-		},
-	}
-}
-
-func TestGetSource(t *testing.T) {
-	tests := []struct {
-		name           string
-		hasSources     bool
-		hasSource      bool
-		appSpec        *ApplicationSpec
-		expectedSource ApplicationSource
-	}{
-		{"GetSource with Source and Sources field present", true, true, getApplicationSpec(), ApplicationSource{Path: "sources/source1"}},
-		{"GetSource with only Sources field", true, false, getApplicationSpec(), ApplicationSource{Path: "sources/source1"}},
-		{"GetSource with only Source field", false, true, getApplicationSpec(), ApplicationSource{Path: "source"}},
-		{"GetSource with no Source and Sources field", false, false, getApplicationSpec(), ApplicationSource{}},
-	}
-	for _, testCase := range tests {
-		testCopy := testCase
-		t.Run(testCopy.name, func(t *testing.T) {
-			t.Parallel()
-			if !testCopy.hasSources {
-				testCopy.appSpec.Sources = nil
-			}
-			if !testCopy.hasSource {
-				testCopy.appSpec.Source = nil
-			}
-			source := testCopy.appSpec.GetSource()
-			assert.Equal(t, testCopy.expectedSource, source)
-		})
-	}
-}
-
-func TestGetSources(t *testing.T) {
-	tests := []struct {
-		name            string
-		hasSources      bool
-		hasSource       bool
-		appSpec         *ApplicationSpec
-		expectedSources ApplicationSources
-	}{
-		{"GetSources with Source and Sources field present", true, true, getApplicationSpec(), ApplicationSources{
-			{Path: "sources/source1"},
-			{Path: "sources/source2"},
-		}},
-		{"GetSources with only Sources field", true, false, getApplicationSpec(), ApplicationSources{
-			{Path: "sources/source1"},
-			{Path: "sources/source2"},
-		}},
-		{"GetSources with only Source field", false, true, getApplicationSpec(), ApplicationSources{
-			{Path: "source"},
-		}},
-		{"GetSources with no Source and Sources field", false, false, getApplicationSpec(), ApplicationSources{}},
-	}
-	for _, testCase := range tests {
-		testCopy := testCase
-		t.Run(testCopy.name, func(t *testing.T) {
-			t.Parallel()
-			if !testCopy.hasSources {
-				testCopy.appSpec.Sources = nil
-			}
-			if !testCopy.hasSource {
-				testCopy.appSpec.Source = nil
-			}
-			sources := testCopy.appSpec.GetSources()
-			assert.Equal(t, testCopy.expectedSources, sources)
-		})
-	}
-}
-
-func TestOptionalArrayEquality(t *testing.T) {
-	// Demonstrate that the JSON unmarshalling of an empty array parameter is an OptionalArray with the array field set
-	// to an empty array.
-	presentButEmpty := `{"array":[]}`
-	param := ApplicationSourcePluginParameter{}
-	err := json.Unmarshal([]byte(presentButEmpty), &param)
-	require.NoError(t, err)
-	jsonPresentButEmpty := param.OptionalArray
-	require.Equal(t, &OptionalArray{Array: []string{}}, jsonPresentButEmpty)
-
-	// We won't simulate the protobuf unmarshalling of an empty array parameter. By experimentation, this is how it's
-	// unmarshalled.
-	protobufPresentButEmpty := &OptionalArray{Array: nil}
-
-	tests := []struct {
-		name     string
-		a        *OptionalArray
-		b        *OptionalArray
-		expected bool
-	}{
-		{"nil and nil", nil, nil, true},
-		{"nil and empty", nil, jsonPresentButEmpty, false},
-		{"nil and empty-containing-nil", nil, protobufPresentButEmpty, false},
-		{"empty-containing-empty and nil", jsonPresentButEmpty, nil, false},
-		{"empty-containing-nil and nil", protobufPresentButEmpty, nil, false},
-		{"empty-containing-empty and empty-containing-empty", jsonPresentButEmpty, jsonPresentButEmpty, true},
-		{"empty-containing-empty and empty-containing-nil", jsonPresentButEmpty, protobufPresentButEmpty, true},
-		{"empty-containing-nil and empty-containing-empty", protobufPresentButEmpty, jsonPresentButEmpty, true},
-		{"empty-containing-nil and empty-containing-nil", protobufPresentButEmpty, protobufPresentButEmpty, true},
-		{"empty-containing-empty and non-empty", jsonPresentButEmpty, &OptionalArray{Array: []string{"a"}}, false},
-		{"non-empty and empty-containing-nil", &OptionalArray{Array: []string{"a"}}, jsonPresentButEmpty, false},
-		{"non-empty and non-empty", &OptionalArray{Array: []string{"a"}}, &OptionalArray{Array: []string{"a"}}, true},
-		{"non-empty and non-empty different", &OptionalArray{Array: []string{"a"}}, &OptionalArray{Array: []string{"b"}}, false},
-	}
-	for _, testCase := range tests {
-		testCopy := testCase
-		t.Run(testCopy.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, testCopy.expected, testCopy.a.Equals(testCopy.b))
-		})
-	}
-}
-
-func TestOptionalMapEquality(t *testing.T) {
-	// Demonstrate that the JSON unmarshalling of an empty map parameter is an OptionalMap with the map field set
-	// to an empty map.
-	presentButEmpty := `{"map":{}}`
-	param := ApplicationSourcePluginParameter{}
-	err := json.Unmarshal([]byte(presentButEmpty), &param)
-	require.NoError(t, err)
-	jsonPresentButEmpty := param.OptionalMap
-	require.Equal(t, &OptionalMap{Map: map[string]string{}}, jsonPresentButEmpty)
-
-	// We won't simulate the protobuf unmarshalling of an empty map parameter. By experimentation, this is how it's
-	// unmarshalled.
-	protobufPresentButEmpty := &OptionalMap{Map: nil}
-
-	tests := []struct {
-		name     string
-		a        *OptionalMap
-		b        *OptionalMap
-		expected bool
-	}{
-		{"nil and nil", nil, nil, true},
-		{"nil and empty-containing-empty", nil, jsonPresentButEmpty, false},
-		{"nil and empty-containing-nil", nil, protobufPresentButEmpty, false},
-		{"empty-containing-empty and nil", jsonPresentButEmpty, nil, false},
-		{"empty-containing-nil and nil", protobufPresentButEmpty, nil, false},
-		{"empty-containing-empty and empty-containing-empty", jsonPresentButEmpty, jsonPresentButEmpty, true},
-		{"empty-containing-empty and empty-containing-nil", jsonPresentButEmpty, protobufPresentButEmpty, true},
-		{"empty-containing-empty and non-empty", jsonPresentButEmpty, &OptionalMap{Map: map[string]string{"a": "b"}}, false},
-		{"empty-containing-nil and empty-containing-empty", protobufPresentButEmpty, jsonPresentButEmpty, true},
-		{"empty-containing-nil and empty-containing-nil", protobufPresentButEmpty, protobufPresentButEmpty, true},
-		{"non-empty and empty-containing-empty", &OptionalMap{Map: map[string]string{"a": "b"}}, jsonPresentButEmpty, false},
-		{"non-empty and non-empty", &OptionalMap{Map: map[string]string{"a": "b"}}, &OptionalMap{Map: map[string]string{"a": "b"}}, true},
-		{"non-empty and non-empty different", &OptionalMap{Map: map[string]string{"a": "b"}}, &OptionalMap{Map: map[string]string{"a": "c"}}, false},
-	}
-	for _, testCase := range tests {
-		testCopy := testCase
-		t.Run(testCopy.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, testCopy.expected, testCopy.a.Equals(testCopy.b))
-		})
 	}
 }

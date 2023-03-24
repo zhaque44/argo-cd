@@ -4,13 +4,11 @@ import (
 	"context"
 	coreerrors "errors"
 	"fmt"
-	"io"
 	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/argoproj/gitops-engine/pkg/health"
 	synccommon "github.com/argoproj/gitops-engine/pkg/sync/common"
 	"github.com/argoproj/gitops-engine/pkg/utils/kube"
 	"github.com/argoproj/gitops-engine/pkg/utils/kube/kubetest"
@@ -47,10 +45,8 @@ import (
 	servercache "github.com/argoproj/argo-cd/v2/server/cache"
 	"github.com/argoproj/argo-cd/v2/server/rbacpolicy"
 	"github.com/argoproj/argo-cd/v2/test"
-	"github.com/argoproj/argo-cd/v2/util/argo"
 	"github.com/argoproj/argo-cd/v2/util/assets"
 	"github.com/argoproj/argo-cd/v2/util/cache"
-	cacheutil "github.com/argoproj/argo-cd/v2/util/cache"
 	"github.com/argoproj/argo-cd/v2/util/cache/appstate"
 	"github.com/argoproj/argo-cd/v2/util/db"
 	"github.com/argoproj/argo-cd/v2/util/errors"
@@ -107,10 +103,6 @@ func fakeRepoServerClient(isHelm bool) *mocks.RepoServerServiceClient {
 	mockRepoServiceClient.On("GetAppDetails", mock.Anything, mock.Anything).Return(&apiclient.RepoAppDetailsResponse{}, nil)
 	mockRepoServiceClient.On("TestRepository", mock.Anything, mock.Anything).Return(&apiclient.TestRepositoryResponse{}, nil)
 	mockRepoServiceClient.On("GetRevisionMetadata", mock.Anything, mock.Anything).Return(&appsv1.RevisionMetadata{}, nil)
-	mockWithFilesClient := &mocks.RepoServerService_GenerateManifestWithFilesClient{}
-	mockWithFilesClient.On("Send", mock.Anything).Return(nil)
-	mockWithFilesClient.On("CloseAndRecv").Return(&apiclient.ManifestResponse{}, nil)
-	mockRepoServiceClient.On("GenerateManifestWithFiles", mock.Anything, mock.Anything).Return(mockWithFilesClient, nil)
 
 	if isHelm {
 		mockRepoServiceClient.On("ResolveRevision", mock.Anything, mock.Anything).Return(fakeResolveRevesionResponseHelm(), nil)
@@ -286,7 +278,7 @@ func newTestAppServerWithEnforcerConfigure(f func(*rbac.Enforcer), t *testing.T,
 		testNamespace,
 		kubeclientset,
 		fakeAppsClientset,
-		factory.Argoproj().V1alpha1().Applications().Lister(),
+		factory.Argoproj().V1alpha1().Applications().Lister().Applications(testNamespace),
 		appInformer,
 		broadcaster,
 		mockRepoClient,
@@ -297,7 +289,6 @@ func newTestAppServerWithEnforcerConfigure(f func(*rbac.Enforcer), t *testing.T,
 		sync.NewKeyLock(),
 		settingsMgr,
 		projInformer,
-		[]string{},
 	)
 	return server.(*Server)
 }
@@ -380,55 +371,6 @@ func createTestApp(testApp string, opts ...func(app *appsv1.Application)) *appsv
 		opts[i](&app)
 	}
 	return &app
-}
-
-type TestServerStream struct {
-	ctx        context.Context
-	appName    string
-	headerSent bool
-}
-
-func (t *TestServerStream) SetHeader(metadata.MD) error {
-	return nil
-}
-
-func (t *TestServerStream) SendHeader(metadata.MD) error {
-	return nil
-}
-
-func (t *TestServerStream) SetTrailer(metadata.MD) {}
-
-func (t *TestServerStream) Context() context.Context {
-	return t.ctx
-}
-
-func (t *TestServerStream) SendMsg(m interface{}) error {
-	return nil
-}
-
-func (t *TestServerStream) RecvMsg(m interface{}) error {
-	return nil
-}
-
-func (t *TestServerStream) SendAndClose(r *apiclient.ManifestResponse) error {
-	return nil
-}
-
-func (t *TestServerStream) Recv() (*application.ApplicationManifestQueryWithFilesWrapper, error) {
-	if !t.headerSent {
-		t.headerSent = true
-		return &application.ApplicationManifestQueryWithFilesWrapper{Part: &application.ApplicationManifestQueryWithFilesWrapper_Query{
-			Query: &application.ApplicationManifestQueryWithFiles{
-				Name:     pointer.String(t.appName),
-				Checksum: pointer.String(""),
-			},
-		}}, nil
-	}
-	return nil, io.EOF
-}
-
-func (t *TestServerStream) ServerStream() TestServerStream {
-	return TestServerStream{}
 }
 
 type TestResourceTreeServer struct {
@@ -577,17 +519,17 @@ func TestNoAppEnumeration(t *testing.T) {
 	t.Run("UpdateSpec", func(t *testing.T) {
 		_, err := appServer.UpdateSpec(adminCtx, &application.ApplicationUpdateSpecRequest{Name: pointer.String("test"), Spec: &appsv1.ApplicationSpec{
 			Destination: appsv1.ApplicationDestination{Namespace: "default", Server: "https://cluster-api.com"},
-			Source:      &appsv1.ApplicationSource{RepoURL: "https://some-fake-source", Path: "."},
+			Source:      appsv1.ApplicationSource{RepoURL: "https://some-fake-source", Path: "."},
 		}})
 		assert.NoError(t, err)
 		_, err = appServer.UpdateSpec(noRoleCtx, &application.ApplicationUpdateSpecRequest{Name: pointer.String("test"), Spec: &appsv1.ApplicationSpec{
 			Destination: appsv1.ApplicationDestination{Namespace: "default", Server: "https://cluster-api.com"},
-			Source:      &appsv1.ApplicationSource{RepoURL: "https://some-fake-source", Path: "."},
+			Source:      appsv1.ApplicationSource{RepoURL: "https://some-fake-source", Path: "."},
 		}})
 		assert.Equal(t, permissionDeniedErr.Error(), err.Error(), "error message must be _only_ the permission error, to avoid leaking information about app existence")
 		_, err = appServer.UpdateSpec(adminCtx, &application.ApplicationUpdateSpecRequest{Name: pointer.String("doest-not-exist"), Spec: &appsv1.ApplicationSpec{
 			Destination: appsv1.ApplicationDestination{Namespace: "default", Server: "https://cluster-api.com"},
-			Source:      &appsv1.ApplicationSource{RepoURL: "https://some-fake-source", Path: "."},
+			Source:      appsv1.ApplicationSource{RepoURL: "https://some-fake-source", Path: "."},
 		}})
 		assert.Equal(t, permissionDeniedErr.Error(), err.Error(), "error message must be _only_ the permission error, to avoid leaking information about app existence")
 	})
@@ -719,15 +661,6 @@ func TestNoAppEnumeration(t *testing.T) {
 		assert.Equal(t, permissionDeniedErr.Error(), err.Error(), "error message must be _only_ the permission error, to avoid leaking information about app existence")
 	})
 
-	t.Run("GetManifestsWithFiles", func(t *testing.T) {
-		err := appServer.GetManifestsWithFiles(&TestServerStream{ctx: adminCtx, appName: "test"})
-		assert.NoError(t, err)
-		err = appServer.GetManifestsWithFiles(&TestServerStream{ctx: noRoleCtx, appName: "test"})
-		assert.Equal(t, permissionDeniedErr.Error(), err.Error(), "error message must be _only_ the permission error, to avoid leaking information about app existence")
-		err = appServer.GetManifestsWithFiles(&TestServerStream{ctx: adminCtx, appName: "does-not-exist"})
-		assert.Equal(t, permissionDeniedErr.Error(), err.Error(), "error message must be _only_ the permission error, to avoid leaking information about app existence")
-	})
-
 	t.Run("WatchResourceTree", func(t *testing.T) {
 		err := appServer.WatchResourceTree(&application.ResourcesQuery{ApplicationName: pointer.String("test")}, &TestResourceTreeServer{ctx: adminCtx})
 		assert.NoError(t, err)
@@ -743,24 +676,6 @@ func TestNoAppEnumeration(t *testing.T) {
 		err = appServer.PodLogs(&application.ApplicationPodLogsQuery{Name: pointer.String("test")}, &TestPodLogsServer{ctx: noRoleCtx})
 		assert.Equal(t, permissionDeniedErr.Error(), err.Error(), "error message must be _only_ the permission error, to avoid leaking information about app existence")
 		err = appServer.PodLogs(&application.ApplicationPodLogsQuery{Name: pointer.String("does-not-exist")}, &TestPodLogsServer{ctx: adminCtx})
-		assert.Equal(t, permissionDeniedErr.Error(), err.Error(), "error message must be _only_ the permission error, to avoid leaking information about app existence")
-	})
-
-	t.Run("ListLinks", func(t *testing.T) {
-		_, err := appServer.ListLinks(adminCtx, &application.ListAppLinksRequest{Name: pointer.String("test")})
-		assert.NoError(t, err)
-		_, err = appServer.ListLinks(noRoleCtx, &application.ListAppLinksRequest{Name: pointer.String("test")})
-		assert.Equal(t, permissionDeniedErr.Error(), err.Error(), "error message must be _only_ the permission error, to avoid leaking information about app existence")
-		_, err = appServer.ListLinks(adminCtx, &application.ListAppLinksRequest{Name: pointer.String("does-not-exist")})
-		assert.Equal(t, permissionDeniedErr.Error(), err.Error(), "error message must be _only_ the permission error, to avoid leaking information about app existence")
-	})
-
-	t.Run("ListResourceLinks", func(t *testing.T) {
-		_, err := appServer.ListResourceLinks(adminCtx, &application.ApplicationResourceRequest{Name: pointer.String("test"), ResourceName: pointer.String("test"), Group: pointer.String("apps"), Kind: pointer.String("Deployment"), Namespace: pointer.String("test")})
-		assert.NoError(t, err)
-		_, err = appServer.ListResourceLinks(noRoleCtx, &application.ApplicationResourceRequest{Name: pointer.String("test"), ResourceName: pointer.String("test"), Group: pointer.String("apps"), Kind: pointer.String("Deployment"), Namespace: pointer.String("test")})
-		assert.Equal(t, permissionDeniedErr.Error(), err.Error(), "error message must be _only_ the permission error, to avoid leaking information about app existence")
-		_, err = appServer.ListResourceLinks(adminCtx, &application.ApplicationResourceRequest{Name: pointer.String("does-not-exist"), ResourceName: pointer.String("test"), Group: pointer.String("apps"), Kind: pointer.String("Deployment"), Namespace: pointer.String("test")})
 		assert.Equal(t, permissionDeniedErr.Error(), err.Error(), "error message must be _only_ the permission error, to avoid leaking information about app existence")
 	})
 
@@ -795,42 +710,6 @@ func unsetSyncRunningOperationState(t *testing.T, appServer *Server) {
 	app.Status.OperationState = nil
 	_, err = appIf.Update(context.Background(), app, metav1.UpdateOptions{})
 	require.NoError(t, err)
-}
-
-func TestListAppsInNamespaceWithLabels(t *testing.T) {
-	appServer := newTestAppServer(t, newTestApp(func(app *appsv1.Application) {
-		app.Name = "App1"
-		app.ObjectMeta.Namespace = "test-namespace"
-		app.SetLabels(map[string]string{"key1": "value1", "key2": "value1"})
-	}), newTestApp(func(app *appsv1.Application) {
-		app.Name = "App2"
-		app.ObjectMeta.Namespace = "test-namespace"
-		app.SetLabels(map[string]string{"key1": "value2"})
-	}), newTestApp(func(app *appsv1.Application) {
-		app.Name = "App3"
-		app.ObjectMeta.Namespace = "test-namespace"
-		app.SetLabels(map[string]string{"key1": "value3"})
-	}))
-	appServer.ns = "test-namespace"
-	appQuery := application.ApplicationQuery{}
-	namespace := "test-namespace"
-	appQuery.AppNamespace = &namespace
-	testListAppsWithLabels(t, appQuery, appServer)
-}
-
-func TestListAppsInDefaultNSWithLabels(t *testing.T) {
-	appServer := newTestAppServer(t, newTestApp(func(app *appsv1.Application) {
-		app.Name = "App1"
-		app.SetLabels(map[string]string{"key1": "value1", "key2": "value1"})
-	}), newTestApp(func(app *appsv1.Application) {
-		app.Name = "App2"
-		app.SetLabels(map[string]string{"key1": "value2"})
-	}), newTestApp(func(app *appsv1.Application) {
-		app.Name = "App3"
-		app.SetLabels(map[string]string{"key1": "value3"})
-	}))
-	appQuery := application.ApplicationQuery{}
-	testListAppsWithLabels(t, appQuery, appServer)
 }
 
 func testListAppsWithLabels(t *testing.T, appQuery application.ApplicationQuery, appServer *Server) {
@@ -1086,9 +965,6 @@ func TestDeleteApp(t *testing.T) {
 	fakeAppCs.AddReactor("delete", "applications", func(action kubetesting.Action) (handled bool, ret runtime.Object, err error) {
 		deleted = true
 		return true, nil, nil
-	})
-	fakeAppCs.AddReactor("get", "applications", func(action kubetesting.Action) (handled bool, ret runtime.Object, err error) {
-		return true, &appsv1.Application{Spec: appsv1.ApplicationSpec{Source: &appsv1.ApplicationSource{}}}, nil
 	})
 	appServer.appclientset = fakeAppCs
 
@@ -1410,9 +1286,6 @@ func TestGetCachedAppState(t *testing.T) {
 	}
 	appServer := newTestAppServer(t, testApp, testProj)
 	fakeClientSet := appServer.appclientset.(*apps.Clientset)
-	fakeClientSet.AddReactor("get", "applications", func(action kubetesting.Action) (handled bool, ret runtime.Object, err error) {
-		return true, &appsv1.Application{Spec: appsv1.ApplicationSpec{Source: &appsv1.ApplicationSource{}}}, nil
-	})
 	t.Run("NoError", func(t *testing.T) {
 		err := appServer.getCachedAppState(context.Background(), testApp, func() error {
 			return nil
@@ -1435,9 +1308,6 @@ func TestGetCachedAppState(t *testing.T) {
 				updated.ResourceVersion = "2"
 				appServer.appBroadcaster.OnUpdate(testApp, updated)
 				return true, testApp, nil
-			})
-			fakeClientSet.AddReactor("get", "applications", func(action kubetesting.Action) (handled bool, ret runtime.Object, err error) {
-				return true, &appsv1.Application{Spec: appsv1.ApplicationSpec{Source: &appsv1.ApplicationSource{}}}, nil
 			})
 			fakeClientSet.Unlock()
 			fakeClientSet.AddWatchReactor("applications", func(action kubetesting.Action) (handled bool, ret watch.Interface, err error) {
@@ -1565,8 +1435,7 @@ func TestLogsGetSelectedPod(t *testing.T) {
 // refreshAnnotationRemover runs an infinite loop until it detects and removes refresh annotation or given context is done
 func refreshAnnotationRemover(t *testing.T, ctx context.Context, patched *int32, appServer *Server, appName string, ch chan string) {
 	for ctx.Err() == nil {
-		aName, appNs := argo.ParseAppQualifiedName(appName, appServer.ns)
-		a, err := appServer.appLister.Applications(appNs).Get(aName)
+		a, err := appServer.appLister.Get(appName)
 		require.NoError(t, err)
 		a = a.DeepCopy()
 		if a.GetAnnotations() != nil && a.GetAnnotations()[appsv1.AnnotationKeyRefresh] != "" {
@@ -1638,7 +1507,7 @@ func TestGetAppRefresh_HardRefresh(t *testing.T) {
 	assert.NoError(t, err)
 	require.NotNil(t, getAppDetailsQuery)
 	assert.True(t, getAppDetailsQuery.NoCache)
-	assert.Equal(t, testApp.Spec.Source, getAppDetailsQuery.Source)
+	assert.Equal(t, &testApp.Spec.Source, getAppDetailsQuery.Source)
 
 	assert.NoError(t, err)
 	select {
@@ -1647,44 +1516,4 @@ func TestGetAppRefresh_HardRefresh(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		assert.Fail(t, "Out of time ( 10 seconds )")
 	}
-}
-
-func TestInferResourcesStatusHealth(t *testing.T) {
-	cacheClient := cacheutil.NewCache(cacheutil.NewInMemoryCache(1 * time.Hour))
-
-	testApp := newTestApp()
-	testApp.Status.ResourceHealthSource = appsv1.ResourceHealthLocationAppTree
-	testApp.Status.Resources = []appsv1.ResourceStatus{{
-		Group:     "apps",
-		Kind:      "Deployment",
-		Name:      "guestbook",
-		Namespace: "default",
-	}, {
-		Group:     "apps",
-		Kind:      "StatefulSet",
-		Name:      "guestbook-stateful",
-		Namespace: "default",
-	}}
-	appServer := newTestAppServer(t, testApp)
-	appStateCache := appstate.NewCache(cacheClient, time.Minute)
-	err := appStateCache.SetAppResourcesTree(testApp.Name, &appsv1.ApplicationTree{Nodes: []appsv1.ResourceNode{{
-		ResourceRef: appsv1.ResourceRef{
-			Group:     "apps",
-			Kind:      "Deployment",
-			Name:      "guestbook",
-			Namespace: "default",
-		},
-		Health: &appsv1.HealthStatus{
-			Status: health.HealthStatusDegraded,
-		},
-	}}})
-
-	require.NoError(t, err)
-
-	appServer.cache = servercache.NewCache(appStateCache, time.Minute, time.Minute, time.Minute)
-
-	appServer.inferResourcesStatusHealth(testApp)
-
-	assert.Equal(t, health.HealthStatusDegraded, testApp.Status.Resources[0].Health.Status)
-	assert.Nil(t, testApp.Status.Resources[1].Health)
 }
