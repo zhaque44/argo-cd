@@ -18,7 +18,6 @@ import (
 	"github.com/argoproj/argo-cd/v2/cmd/argocd/commands/headless"
 	argocdclient "github.com/argoproj/argo-cd/v2/pkg/apiclient"
 	applicationpkg "github.com/argoproj/argo-cd/v2/pkg/apiclient/application"
-	"github.com/argoproj/argo-cd/v2/pkg/apis/application"
 	v1alpha1 "github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
 	"github.com/argoproj/argo-cd/v2/util/argo"
 	"github.com/argoproj/argo-cd/v2/util/errors"
@@ -203,7 +202,7 @@ func getActionableResourcesForApplication(appIf applicationpkg.ApplicationServic
 	if err != nil {
 		return nil, err
 	}
-	app.Kind = application.ApplicationKind
+	app.Kind = "Application"
 	app.APIVersion = "argoproj.io/v1alpha1"
 	appManifest, err := json.Marshal(app)
 	if err != nil {
