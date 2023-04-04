@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 
 	log "github.com/sirupsen/logrus"
 
@@ -129,29 +128,27 @@ func nestedGeneratorsHaveClusterGenerator(generators []argoprojiov1alpha1.Applic
 
 // nestedGeneratorHasClusterGenerator checks if the provided generator has a cluster generator.
 func nestedGeneratorHasClusterGenerator(nested argoprojiov1alpha1.ApplicationSetNestedGenerator) (bool, error) {
-	if nested.Clusters != nil {
+	switch {
+	case nested.Clusters != nil:
 		return true, nil
-	}
-
-	if nested.Matrix != nil {
+	case nested.Matrix != nil:
 		nestedMatrix, err := argoprojiov1alpha1.ToNestedMatrixGenerator(nested.Matrix)
-		if err != nil {
-			return false, fmt.Errorf("unable to get nested matrix generator: %w", err)
+		if err == nil && nestedMatrix != nil {
+			ok, err := nestedGeneratorsHaveClusterGenerator(nestedMatrix.ToMatrixGenerator().Generators)
+			if err != nil {
+				return false, err
+			}
+			return ok, nil
 		}
-		if nestedMatrix != nil {
-			return nestedGeneratorsHaveClusterGenerator(nestedMatrix.ToMatrixGenerator().Generators)
-		}
-	}
-
-	if nested.Merge != nil {
+	case nested.Merge != nil:
 		nestedMerge, err := argoprojiov1alpha1.ToNestedMergeGenerator(nested.Merge)
-		if err != nil {
-			return false, fmt.Errorf("unable to get nested merge generator: %w", err)
-		}
-		if nestedMerge != nil {
-			return nestedGeneratorsHaveClusterGenerator(nestedMerge.ToMergeGenerator().Generators)
+		if err == nil && nestedMerge != nil {
+			ok, err := nestedGeneratorsHaveClusterGenerator(nestedMerge.ToMergeGenerator().Generators)
+			if err != nil {
+				return false, err
+			}
+			return ok, nil
 		}
 	}
-
 	return false, nil
 }
